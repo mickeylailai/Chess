@@ -91,11 +91,6 @@ class Board():
         #計算數字
         rank_str = str(8 - r)
         
-        #組合回傳d
-        
-        #計算數字
-        rank_str = str(8 - r)
-        
         #組合回傳
         return file_str + rank_str
     
@@ -488,7 +483,7 @@ class Board():
     
     def load_fen(self, fen_str):
         # 將 FEN 字串用「空格」切成不同區塊
-        parts = fen_str.split('rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2')
+        parts = fen_str.split()
         
         # --- 1. 還原棋盤陣列 ---
         self.board = np.zeros((8, 8), dtype=int)
@@ -499,7 +494,7 @@ class Board():
         
         # 依照 '/' 切割出 8 個橫列
         rows = parts[0].split('/')
-        for r in range(7):
+        for r in range(8):
             c = 0
             for char in rows[r]:
                 if char.isdigit():
@@ -533,7 +528,7 @@ class Board():
         else:
             self.en_passant = None
             
-        print("✅ 成功載入外部 FEN 盤面！")
+        print("GET！")
     
     book_file = r"C:\Users\micke\OneDrive\桌面\Chess\Titans.bin"
 

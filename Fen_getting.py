@@ -1,17 +1,17 @@
 import time
 import pyperclip
-from board import Board
+from core.board import Board
 
 def start_listening():
     last_fen = "" 
     while True:
-        # 讀取剪貼簿中的文字
+        #讀取剪貼簿中的文字
         current_text = pyperclip.paste().strip()
         
         #如果是Fen才接受
         if current_text != last_fen and current_text.count('/') == 7:
             last_fen = current_text
-            print(f"\n📥 接收到新盤面: {last_fen}")
+            print(f"\nget new_fen: {last_fen}")
             
             #棋盤載入
             game = Board()
@@ -23,7 +23,9 @@ def start_listening():
             
             if result:
                 begin, end, promote = result
-                print(f"{begin} -> {end}")
+                str_begin = game.to_algebraic(begin)
+                str_end = game.to_algebraic(end)
+                print(f"{str_begin} -> {str_end}")
             else:
                 print("查無資料")
                 
