@@ -1,6 +1,6 @@
 import time
 import pyperclip
-from core.board import Board
+from board import Board
 
 def start_listening():
     last_fen = "" 
