@@ -6,6 +6,7 @@ import chess
 import chess.polyglot
 import config
 from . import piece_moves
+import zobrist
 
 class Board():
     def __init__(self):
@@ -29,7 +30,10 @@ class Board():
         self.en_passant = None
 
         self.setup_board()
-    
+        self.history = []
+
+        self.zobrist_key = 0
+
     def setup_board(self):
 
         # 初始化棋盤-Pawn
@@ -48,14 +52,15 @@ class Board():
             config.ROOK
         ]
 
-        self.board[0] = np.array(pieces) * config.BLACK 
+        self.board[0] = np.array(pieces) * config.BLACK
         self.board[7] = np.array(pieces) * config.WHITE
-        
+
+        self.zobrist_key = zobrist.compute_initial_hash(self)
+
     def display(self):
 
-        # 棋子映射表
         pieces_map = {
-            0: " . ", 
+            0: " . ",
             1: " wP", -1: " bP",
             2: " wN", -2: " bN",
             3: " wB", -3: " bB",
@@ -66,17 +71,12 @@ class Board():
 
         print("\n")
         for r in range(8):
-            # 印出行號
-            print(f"{8-r}", end=" ") 
-            
-            # 印出棋子
+            print(f"{8-r}", end=" ")
             for c in range(8):
                 piece_code = self.board[r][c]
                 print(pieces_map[piece_code], end="")
-            
-            print(" ") 
-        
-        #行號
+            print(" ")
+
         print("   a  b  c  d  e  f  g  h\n")
 
     def to_algebraic(self, coord):
@@ -93,77 +93,66 @@ class Board():
         
         #組合回傳
         return file_str + rank_str
-    
-    def from_algebraic(self, move_str):
 
+    def from_algebraic(self, move_str):
         files = "abcdefgh"
-        
-        c1 = files.index(move_str[0]) 
-        r1 = 8 - int(move_str[1])     
+
+        c1 = files.index(move_str[0])
+        r1 = 8 - int(move_str[1])
 
         c2 = files.index(move_str[2])
         r2 = 8 - int(move_str[3])
-        
-       
+
         promote = config.QUEEN
         if len(move_str) == 5:
             promo_char = move_str[4]
             if promo_char == 'n': promote = config.KNIGHT
             elif promo_char == 'b': promote = config.BISHOP
             elif promo_char == 'r': promote = config.ROOK
-            
+
         return (r1, c1), (r2, c2), promote
 
-
-    def move(self, begin, end, promote = config.QUEEN):
+    def move(self, begin, end, promote=config.QUEEN):
         r1, c1 = begin
         r2, c2 = end
 
         #過路兵
-        if abs(self.board[r1][c1]) == 1:
+        if abs(self.board[r1][c1]) == config.PAWN:
             if (r2, c2) == self.en_passant:
                 self.board[r1][c2] = 0
 
         #castle判定
         #王,堡
-        if self.board[r1][c1] == 6:
+        if self.board[r1][c1] == config.KING * config.WHITE:
             self.white_king_moved = True
-        if self.board[r1][c1] == -6:
+        if self.board[r1][c1] == config.KING * config.BLACK:
             self.black_king_moved = True
-        if self.board[r1][c1] == 4:
+        if self.board[r1][c1] == config.ROOK * config.WHITE:
             if c1 == 7:
                 self.white_Hrook_moved = True
-            else:
+            elif c1 == 0:
                 self.white_Arook_moved = True
-        if self.board[r1][c1] == -4:
+        if self.board[r1][c1] == config.ROOK * config.BLACK:
             if c1 == 7:
                 self.black_Hrook_moved = True
-            else:
+            elif c1 == 0:
                 self.black_Arook_moved = True
-        
+
         #若王入堡
-        self.white_Lcastle = 0
-        self.white_Scastle = 0
-        self.black_Lcastle = 0
-        self.black_Scastle = 0
         #白王
-        if (r1, c1) == (7,4) and (r2, c2) == (7,6):
+        if (r1, c1) == (7, 4) and (r2, c2) == (7, 6):
             self.board[7][5] = self.board[7][7]
             self.board[7][7] = 0
-            self.white_Scastle = 1
-        if (r1, c1) == (7,4) and (r2, c2) == (7,2):
+        if (r1, c1) == (7, 4) and (r2, c2) == (7, 2):
             self.board[7][3] = self.board[7][0]
             self.board[7][0] = 0
-            self.white_Lcastle = 1
         #黑王
-        if (r1, c1) == (0,4) and (r2, c2) == (0,6):
+        if (r1, c1) == (0, 4) and (r2, c2) == (0, 6):
             self.board[0][5] = self.board[0][7]
             self.board[0][7] = 0
-            self.black_Scastle = 1
-        if (r1, c1) == (0,4) and (r2, c2) == (0,2):
+        if (r1, c1) == (0, 4) and (r2, c2) == (0, 2):
             self.board[0][3] = self.board[0][0]
             self.board[0][0] = 0
-            self.black_Lcastle = 1
 
         #移過去
         self.board[r2][c2] = self.board[r1][c1]
@@ -172,31 +161,107 @@ class Board():
         self.board[r1][c1] = 0
 
         #Promote
-        if abs(self.board[r2][c2]) == 1:
+        if abs(self.board[r2][c2]) == config.PAWN:
             if r2 == 0 or r2 == 7:
-                
                 color = 1 if self.board[r2][c2] > 0 else -1
-                
                 self.board[r2][c2] = promote * color
-        
+
         #有沒有兩步的兵
         self.en_passant = None
-        if abs(self.board[r2][c2]) == 1 and abs(r2 - r1) == 2:
+        if abs(self.board[r2][c2]) == config.PAWN and abs(r2 - r1) == 2:
             mid_r = (r1 + r2) // 2
             self.en_passant = (mid_r, c1)
 
         #換下個人
         self.turn *= -1
-    
+
+    #確定行動合法
+    def is_in_check(self, color):
+        # 找王的位置
+        king_val = config.KING * color
+        king_pos = None
+        for r in range(8):
+            for c in range(8):
+                if self.board[r][c] == king_val:
+                    king_pos = (r, c)
+                    break
+            if king_pos:
+                break
+
+        kr, kc = king_pos
+        opp = -color  # 對方顏色
+
+        # 馬的攻擊
+        for dr, dc in piece_moves.KNIGHT_MOVES:
+            r, c = kr + dr, kc + dc
+            if self.is_on_board((r, c)):
+                if self.board[r][c] == config.KNIGHT * opp:
+                    return True
+
+        # 車/后（直線方向）
+        for dr, dc in piece_moves.ORTHOGONAL_MOVES:
+            r, c = kr, kc
+            while True:
+                r += dr
+                c += dc
+                if not self.is_on_board((r, c)):
+                    break
+                target = self.board[r][c]
+                if target == 0:
+                    continue
+                if target == config.ROOK * opp or target == config.QUEEN * opp:
+                    return True
+                break  # 被其他棋子擋住
+
+        # 象/后（斜線方向）
+        for dr, dc in piece_moves.DIAGONAL_MOVES:
+            r, c = kr, kc
+            while True:
+                r += dr
+                c += dc
+                if not self.is_on_board((r, c)):
+                    break
+                target = self.board[r][c]
+                if target == 0:
+                    continue
+                if target == config.BISHOP * opp or target == config.QUEEN * opp:
+                    return True
+                break
+
+        # 王的攻擊（避免兩王親親）
+        for dr, dc in piece_moves.KING_MOVES:
+            r, c = kr + dr, kc + dc
+            if self.is_on_board((r, c)):
+                if self.board[r][c] == config.KING * opp:
+                    return True
+
+        # 兵的攻擊
+        pawn_attack_row = kr + (-color)
+        for dc in [-1, 1]:
+            c = kc + dc
+            if self.is_on_board((pawn_attack_row, c)):
+                if self.board[pawn_attack_row][c] == config.PAWN * opp:
+                    return True
+
+        return False
+
+    def is_legal_move(self, begin, end, promote=config.QUEEN):
+        r1, c1 = begin
+        color = 1 if self.board[r1][c1] > 0 else -1
+
+        self.make_move(begin, end, promote)
+        
+        in_check = self.is_in_check(color)
+
+        self.undo_move()
+
+        return not in_check
+
     #邊界Safety Guard
     def is_on_board(self, end):
-        r,c = end
+        r, c = end
+        return 0 <= r <= 7 and 0 <= c <= 7
 
-        if r > 7 or r < 0 or c > 7 or c < 0:
-            return(False)
-        else:
-            return(True)
-    
     #Knight moves
     def get_knight_moves(self, begin):
 
@@ -208,30 +273,15 @@ class Board():
         #確認馬合法行動
         knight_moves = []
 
-        for i in range(len(piece_moves.KNIGHT_MOVES)):
-            
-            #移動表對照下的移動位置
-            dr, dc = piece_moves.KNIGHT_MOVES[i]
-            end = [r1+dr, c1+dc]
-            
+        for dr, dc in piece_moves.KNIGHT_MOVES:
+            r2, c2 = r1 + dr, c1 + dc
+            if self.is_on_board((r2, c2)):
+                target = self.board[r2][c2]
+                target_color = (1 if target > 0 else -1) if target != 0 else 0
+                if target_color != color1:
+                    knight_moves.append((r2, c2))
 
-            #邊界檢查
-            if self.is_on_board(end) :
-                if self.board[r1+dr][c1+dc] > 0:
-                        color2 = 1
-                elif self.board[r1+dr][c1+dc] < 0:
-                        color2 = -1
-                else:
-                        color2 = 0
-
-                if color1 != color2 or color2 == 0:
-                    knight_moves.append(end)
-                else:
-                    continue
-            else:
-                continue
-
-        return(knight_moves)
+        return knight_moves
 
     def get_sliding_moves(self, begin, directions):
         #保留原始點(因為要跑好多個方向)
@@ -245,13 +295,10 @@ class Board():
         # 每個方向
         for dr, dc in directions:
             #重置到起點
-            r, c = r_start, c_start 
-
+            r, c = r_start, c_start
             while True:
                 r += dr
                 c += dc
-                
-                #出界停止
                 if not self.is_on_board((r, c)):
                     break
 
@@ -287,7 +334,7 @@ class Board():
 
     def get_queen_moves(self, pos):
         
-        return self.get_sliding_moves(pos, piece_moves.QUEEN_MOVES)     
+        return self.get_sliding_moves(pos, piece_moves.QUEEN_MOVES)
 
     def get_king_moves(self, begin):
 
@@ -299,61 +346,69 @@ class Board():
         #確認王合法行動
         king_moves = []
 
-        for i in range(len(piece_moves.KING_MOVES)):
-            
-            #移動表對照下的移動位置
-            dr, dc = piece_moves.KING_MOVES[i]
-            end = [r1+dr, c1+dc]
-            
-
-            #邊界檢查
-            if self.is_on_board(end) :
-                if self.board[r1+dr][c1+dc] > 0:
-                        color2 = 1
-                elif self.board[r1+dr][c1+dc] < 0:
-                        color2 = -1
-                else:
-                        color2 = 0
-
-                if color1 != color2 or color2 == 0:
-                    king_moves.append(end)
-                else:
-                    continue
-            else:
-                continue
+        for dr, dc in piece_moves.KING_MOVES:
+            r2, c2 = r1 + dr, c1 + dc
+            if self.is_on_board((r2, c2)):
+                target = self.board[r2][c2]
+                target_color = (1 if target > 0 else -1) if target != 0 else 0
+                if target_color != color1:
+                    king_moves.append((r2, c2))
         
         #入堡
         if color1 == 1:
-            if self.white_king_moved == False:
-                if self.white_Arook_moved == False:
-                    for i in range(1,4):
-                        if self.board[7][i] != 0:
-                            break
-                        if i == 3:
-                            king_moves.append((7,2))
-                if self.white_Hrook_moved == False:
-                    for i in range(5,7):
-                        if self.board[7][i] != 0:
-                            break
-                        if i == 6:
-                            king_moves.append((7,6))
+            if not self.white_king_moved and not self.is_in_check(color1):
+                if not self.white_Hrook_moved:
+                    if self.board[7][5] == 0 and self.board[7][6] == 0:
+                        if not self._is_square_attacked((7, 5), color1) and \
+                           not self._is_square_attacked((7, 6), color1):
+                            king_moves.append((7, 6))
+                if not self.white_Arook_moved:
+                    if self.board[7][1] == 0 and self.board[7][2] == 0 and self.board[7][3] == 0:
+                        if not self._is_square_attacked((7, 3), color1) and \
+                           not self._is_square_attacked((7, 2), color1):
+                            king_moves.append((7, 2))
         else:
-            if self.black_king_moved == False:
-                if self.black_Arook_moved == False:
-                    for i in range(1,4):
-                        if self.board[0][i] != 0:
-                            break
-                        if i == 3:
-                            king_moves.append((0,2))
-                if self.black_Hrook_moved == False:
-                    for i in range(5,7):
-                        if self.board[0][i] != 0:
-                            break
-                        if i == 6:
-                            king_moves.append((0,6))
+            if not self.black_king_moved and not self.is_in_check(color1):
+                if not self.black_Hrook_moved:
+                    if self.board[0][5] == 0 and self.board[0][6] == 0:
+                        if not self._is_square_attacked((0, 5), color1) and \
+                           not self._is_square_attacked((0, 6), color1):
+                            king_moves.append((0, 6))
+                if not self.black_Arook_moved:
+                    if self.board[0][1] == 0 and self.board[0][2] == 0 and self.board[0][3] == 0:
+                        if not self._is_square_attacked((0, 3), color1) and \
+                           not self._is_square_attacked((0, 2), color1):
+                            king_moves.append((0, 2))
             
-        return(king_moves)  
-    
+        return(king_moves)
+
+    def _is_square_attacked(self, square, color):
+
+        sr, sc = square
+        king_val = config.KING * color
+        opp = -color
+
+        old_val = self.board[sr][sc]
+        king_r, king_c = None, None
+        for r in range(8):
+            for c in range(8):
+                if self.board[r][c] == king_val:
+                    king_r, king_c = r, c
+                    break
+            if king_r is not None:
+                break
+
+        self.board[king_r][king_c] = 0
+        self.board[sr][sc] = king_val
+
+        attacked = self.is_in_check(color)
+
+        # 還原
+        self.board[sr][sc] = old_val
+        self.board[king_r][king_c] = king_val
+
+        return attacked
+
     def get_pawn_moves(self, begin):
          
         r1, c1 = begin
@@ -375,42 +430,157 @@ class Board():
             if self.board[r2][c2] == 0:
                 pawn_moves.append((r2,c2))
                 if r1 == start_r:
-                    r2, c2 = r1 + (2*direction), c1
-                    if self.board[r2][c2] == 0:
-                         pawn_moves.append((r2,c2))
+                    r2b, c2b = r1 + (2 * direction), c1
+                    if self.board[r2b][c2b] == 0:
+                         pawn_moves.append((r2b,c2b))
         
         #斜向吃(後來發現可以整合但已經寫了)
-        if color1 == 1:
-            r2 = r1 + direction
-            
-            #右前
-            c2 = c1 + 1
-            if self.is_on_board((r2,c2)):
-                if self.board[r2][c2] < 0 or (r2, c2) == self.en_passant:
-                    pawn_moves.append((r2,c2))
-
-            #左前
-            c2 = c1 - 1
-            if self.is_on_board((r2,c2)):
-                if self.board[r2][c2] < 0 or (r2, c2) == self.en_passant:
-                    pawn_moves.append((r2,c2))
-        else:
-            r2 = r1 + direction
-            
-            #右前
-            c2 = c1 - 1
-            if self.is_on_board((r2,c2)):
-                if self.board[r2][c2] > 0 or (r2, c2) == self.en_passant:
-                    pawn_moves.append((r2,c2))
-
-            #左前
-            c2 = c1 + 1
-            if self.is_on_board((r2,c2)):
-                if self.board[r2][c2] > 0 or (r2, c2) == self.en_passant:
-                    pawn_moves.append((r2,c2))
+        r2 = r1 + direction
+        for dc in [1, -1]:
+            c2 = c1 + dc
+            if self.is_on_board((r2, c2)):
+                target = self.board[r2][c2]
+                if (color1 == 1 and target < 0) or \
+                   (color1 == -1 and target > 0) or \
+                   (r2, c2) == self.en_passant:
+                    pawn_moves.append((r2, c2))
         
         return(pawn_moves)
     
+    def get_all_legal_moves(self, color):
+
+        all_moves = []
+
+        for r in range(8):
+            for c in range(8):
+                piece = self.board[r][c]
+                if piece == 0 or np.sign(piece) != color:
+                    continue
+
+                start_pos = (r, c)
+                abs_piece = abs(piece)
+
+                if abs_piece == config.PAWN:
+                    candidates = self.get_pawn_moves(start_pos)
+                elif abs_piece == config.ROOK:
+                    candidates = self.get_rook_moves(start_pos)
+                elif abs_piece == config.KNIGHT:
+                    candidates = self.get_knight_moves(start_pos)
+                elif abs_piece == config.BISHOP:
+                    candidates = self.get_bishop_moves(start_pos)
+                elif abs_piece == config.QUEEN:
+                    candidates = self.get_queen_moves(start_pos)
+                elif abs_piece == config.KING:
+                    candidates = self.get_king_moves(start_pos)
+                else:
+                    candidates = []
+
+                for end_pos in candidates:
+                    if self.is_legal_move(start_pos, end_pos):
+                        all_moves.append((start_pos, end_pos))
+
+        return all_moves
+
+    def is_checkmate(self, color):
+
+        return self.is_in_check(color) and len(self.get_all_legal_moves(color)) == 0
+
+    def is_stalemate(self, color):
+
+        return not self.is_in_check(color) and len(self.get_all_legal_moves(color)) == 0
+
+    def make_move(self, begin, end, promote=config.QUEEN):
+        
+        # 1. 儲存當前狀態，準備給 undo_move 用
+        state = {
+            'board': self.board.copy(),
+            'turn': self.turn,
+            'wkm': self.white_king_moved,
+            'bkm': self.black_king_moved,
+            'whr': self.white_Hrook_moved,
+            'war': self.white_Arook_moved,
+            'bhr': self.black_Hrook_moved,
+            'bar': self.black_Arook_moved,
+            'ep': self.en_passant,
+            'zobrist_key': self.zobrist_key 
+        }
+        self.history.append(state)
+        
+        r1, c1 = begin
+        r2, c2 = end
+        moving_piece = self.board[r1][c1]
+        target_piece = self.board[r2][c2]
+        
+        # --- [A] 移除舊的全局狀態 (易位權、過路兵) ---
+        if not self.white_king_moved and not self.white_Hrook_moved: self.zobrist_key ^= zobrist.CASTLING[0]
+        if not self.white_king_moved and not self.white_Arook_moved: self.zobrist_key ^= zobrist.CASTLING[1]
+        if not self.black_king_moved and not self.black_Hrook_moved: self.zobrist_key ^= zobrist.CASTLING[2]
+        if not self.black_king_moved and not self.black_Arook_moved: self.zobrist_key ^= zobrist.CASTLING[3]
+        if self.en_passant: self.zobrist_key ^= zobrist.EN_PASSANT[self.en_passant[1]]
+        
+        # --- [B] 執行實際的移動邏輯 (包含升變、入堡、吃過路兵) ---
+        # 讓你的 move 去改變陣列和 flag
+        self.move(begin, end, promote) 
+        
+        # --- [C] 根據新的棋盤狀態進行 XOR ---
+        
+        # 1. 把起點的棋子「拿走」
+        self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(moving_piece)][r1 * 8 + c1]
+        
+        # 2. 如果原本終點有棋子，把它「拿走」(一般吃子)
+        if target_piece != 0:
+            self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(target_piece)][r2 * 8 + c2]
+            
+        # 3. 處理特殊的「吃過路兵」 (棋子不在終點格子上)
+        if abs(moving_piece) == config.PAWN and target_piece == 0 and c1 != c2:
+            # 這是吃過路兵，被吃的兵在終點的上一列或下一列
+            ep_r = r1 
+            ep_pawn = config.PAWN * (-1 if moving_piece > 0 else 1)
+            self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(ep_pawn)][ep_r * 8 + c2]
+
+        # 4. 把棋子「放下去」(如果有升變，就放升變後的棋子)
+        placed_piece = self.board[r2][c2] # 直接去盤面上拿最新的棋子
+        self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(placed_piece)][r2 * 8 + c2]
+
+        # 5. 處理入堡時「車」的移動
+        if abs(moving_piece) == config.KING and abs(c2 - c1) == 2:
+            if c2 == 6: # 短堡
+                rook = self.board[r2][5]
+                # 拿走角落的車，放在 f 欄
+                self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(rook)][r2 * 8 + 7]
+                self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(rook)][r2 * 8 + 5]
+            elif c2 == 2: # 長堡
+                rook = self.board[r2][3]
+                self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(rook)][r2 * 8 + 0]
+                self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(rook)][r2 * 8 + 3]
+
+        if not self.white_king_moved and not self.white_Hrook_moved: self.zobrist_key ^= zobrist.CASTLING[0]
+        if not self.white_king_moved and not self.white_Arook_moved: self.zobrist_key ^= zobrist.CASTLING[1]
+        if not self.black_king_moved and not self.black_Hrook_moved: self.zobrist_key ^= zobrist.CASTLING[2]
+        if not self.black_king_moved and not self.black_Arook_moved: self.zobrist_key ^= zobrist.CASTLING[3]
+        if self.en_passant: self.zobrist_key ^= zobrist.EN_PASSANT[self.en_passant[1]]
+        
+        # 換人走
+        self.zobrist_key ^= zobrist.BLACK_TO_MOVE
+
+    def undo_move(self):
+        if not self.history:
+            return
+            
+        state = self.history.pop()
+        
+        self.turn = state['turn']
+        self.white_king_moved = state['wkm']
+        self.black_king_moved = state['bkm']
+        self.white_Hrook_moved = state['whr']
+        self.white_Arook_moved = state['war']
+        self.black_Hrook_moved = state['bhr']
+        self.black_Arook_moved = state['bar']
+        self.en_passant = state['ep']
+        self.zobrist_key = state['zobrist_key'] 
+        self.board = state['board']
+
+
     def get_fen(self):
         fen = {
             1: 'P', -1: 'p',
@@ -448,27 +618,17 @@ class Board():
 
         #入堡狀況
         Fen += ' '
-        Cas = 0
+        castling = ''
         
         #白短
-        if not self.white_king_moved and not self.white_Hrook_moved: 
-            Fen += 'K'
-            Cas = 1
+        if not self.white_king_moved and not self.white_Hrook_moved: castling += 'K'
         #白長
-        if not self.white_king_moved and not self.white_Arook_moved: 
-            Fen += 'Q'
-            Cas = 1
+        if not self.white_king_moved and not self.white_Arook_moved: castling += 'Q'
         #黑短
-        if not self.black_king_moved and not self.black_Hrook_moved: 
-            Fen += 'k'
-            Cas = 1
+        if not self.black_king_moved and not self.black_Hrook_moved: castling += 'k'
         #黑長
-        if not self.black_king_moved and not self.black_Arook_moved: 
-            Fen += 'q'
-            Cas = 1
-  
-        if Cas == 0:
-            Fen += '-'
+        if not self.black_king_moved and not self.black_Arook_moved: castling += 'q'
+        Fen += castling if castling else '-'
 
         #過路兵
         Fen += ' '
@@ -480,7 +640,7 @@ class Board():
         Fen += ' 0 1'
 
         return(Fen)
-    
+
     def load_fen(self, fen_str):
         # 將 FEN 字串用「空格」切成不同區塊
         parts = fen_str.split()
@@ -511,13 +671,12 @@ class Board():
         # --- 3. 還原入堡權限 ---
         # 簡單暴力法：如果沒看到大寫 K，就當作白方國王或短車已經動過了，失去權利
         castling = parts[2]
-        self.white_king_moved = True if ('K' not in castling and 'Q' not in castling) else False
-        self.white_Hrook_moved = True if 'K' not in castling else False
-        self.white_Arook_moved = True if 'Q' not in castling else False
-        
-        self.black_king_moved = True if ('k' not in castling and 'q' not in castling) else False
-        self.black_Hrook_moved = True if 'k' not in castling else False
-        self.black_Arook_moved = True if 'q' not in castling else False
+        self.white_king_moved  = 'K' not in castling and 'Q' not in castling
+        self.white_Hrook_moved = 'K' not in castling
+        self.white_Arook_moved = 'Q' not in castling
+        self.black_king_moved  = 'k' not in castling and 'q' not in castling
+        self.black_Hrook_moved = 'k' not in castling
+        self.black_Arook_moved = 'q' not in castling
         
         # --- 4. 還原過路兵 ---
         if parts[3] != '-':
@@ -527,32 +686,26 @@ class Board():
             self.en_passant = (ep_r, ep_c)
         else:
             self.en_passant = None
+
+        self.zobrist_key = zobrist.compute_initial_hash(self)
             
         print("GET！")
-    
-    book_file = r"C:\Users\micke\OneDrive\桌面\Chess\Titans.bin"
 
     def get_book_move(self, book_path):
-
         fen = self.get_fen()
-        
         board = chess.Board(fen)
-        
+
         try:
-
             with chess.polyglot.open_reader(book_path) as reader:
-
                 entry = reader.find(board)
-                
-                move_str = entry.move.uci() 
-                
+                move_str = entry.move.uci()
                 return self.from_algebraic(move_str)
-                
         except IndexError:
             return None
         except FileNotFoundError:
             print("Path wrong!!!")
             return None
+
 
 if __name__ == "__main__":
     game = Board()
