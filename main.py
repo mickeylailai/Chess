@@ -12,7 +12,7 @@ from Fen_getting import start_listening
 import search
 
 if __name__ == "__main__":
-    print("程式已啟動，持續監聽剪貼簿中的 FEN 碼... (按 Ctrl+C 關閉)")
+    print("偵測FEN")
     
 
     current_fen = ""
@@ -57,7 +57,7 @@ if __name__ == "__main__":
                 else:
                     print("No Solution")
             
-            print("-" * 50) # 印出分隔線，準備迎接下一步
+            print("-" * 50) 
             
     except KeyboardInterrupt:
-        print("\n程式已手動關閉。")
+        print("\n Finish")

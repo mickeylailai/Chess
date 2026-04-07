@@ -34,6 +34,9 @@ class Board():
 
         self.zobrist_key = 0
 
+        self.white_king_pos = (7, 4)
+        self.black_king_pos = (0, 4)
+
     def setup_board(self):
 
         # 初始化棋盤-Pawn
@@ -172,24 +175,22 @@ class Board():
             mid_r = (r1 + r2) // 2
             self.en_passant = (mid_r, c1)
 
+        #王位置
+        if abs(self.board[r1][c1]) == config.KING:
+            if self.board[r1][c1] > 0:
+                self.white_king_pos = (r2, c2)
+            else:
+                self.black_king_pos = (r2, c2)
+
         #換下個人
         self.turn *= -1
 
     #確定行動合法
     def is_in_check(self, color):
-        # 找王的位置
-        king_val = config.KING * color
-        king_pos = None
-        for r in range(8):
-            for c in range(8):
-                if self.board[r][c] == king_val:
-                    king_pos = (r, c)
-                    break
-            if king_pos:
-                break
+        
+        kr, kc = self.white_king_pos if color == 1 else self.black_king_pos
+        opp = -color#對方顏色
 
-        kr, kc = king_pos
-        opp = -color  # 對方顏色
 
         # 馬的攻擊
         for dr, dc in piece_moves.KNIGHT_MOVES:
@@ -480,7 +481,41 @@ class Board():
                         all_moves.append((start_pos, end_pos))
 
         return all_moves
+    def get_capture_moves(self, color):
+        
+        legal_moves = self.get_all_legal_moves(color)
+        capture_moves = []
 
+        for move in legal_moves:
+            begin, end = move
+            r1, c1 = begin
+            r2, c2 = end
+
+            attacker_piece = self.board[r1][c1]
+            target_piece = self.board[r2][c2]
+
+            # 判斷是否為過路兵吃子
+            is_en_passant = (abs(attacker_piece) == config.PAWN and (r2, c2) == self.en_passant)
+
+            if target_piece != 0 or is_en_passant:
+                if is_en_passant:
+                    victim_val = config.MG_value.get(config.PAWN, 0)
+                else:
+                    victim_val = config.MG_value.get(abs(target_piece), 0)
+                
+                attacker_val = config.MG_value.get(abs(attacker_piece), 0)
+
+                #MVV-LVA評分：越有價值的要被吃掉
+                #乘上10放大受害者的重要性
+                score = (victim_val * 10) - attacker_val
+                
+                capture_moves.append((score, move))
+
+        # 依照分數由大到小排序
+        capture_moves.sort(key=lambda x: x[0], reverse=True)
+
+        return [move for score, move in capture_moves]
+    
     def is_checkmate(self, color):
 
         return self.is_in_check(color) and len(self.get_all_legal_moves(color)) == 0
@@ -490,10 +525,16 @@ class Board():
         return not self.is_in_check(color) and len(self.get_all_legal_moves(color)) == 0
 
     def make_move(self, begin, end, promote=config.QUEEN):
-        
-        # 1. 儲存當前狀態，準備給 undo_move 用
+        r1, c1 = begin
+        r2, c2 = end
+        moving_piece = self.board[r1][c1]
+        target_piece = self.board[r2][c2] 
+
         state = {
-            'board': self.board.copy(),
+            'begin': begin,
+            'end': end,
+            'moving_piece': moving_piece,
+            'target_piece': target_piece,
             'turn': self.turn,
             'wkm': self.white_king_moved,
             'bkm': self.black_king_moved,
@@ -511,45 +552,37 @@ class Board():
         moving_piece = self.board[r1][c1]
         target_piece = self.board[r2][c2]
         
-        # --- [A] 移除舊的全局狀態 (易位權、過路兵) ---
         if not self.white_king_moved and not self.white_Hrook_moved: self.zobrist_key ^= zobrist.CASTLING[0]
         if not self.white_king_moved and not self.white_Arook_moved: self.zobrist_key ^= zobrist.CASTLING[1]
         if not self.black_king_moved and not self.black_Hrook_moved: self.zobrist_key ^= zobrist.CASTLING[2]
         if not self.black_king_moved and not self.black_Arook_moved: self.zobrist_key ^= zobrist.CASTLING[3]
         if self.en_passant: self.zobrist_key ^= zobrist.EN_PASSANT[self.en_passant[1]]
         
-        # --- [B] 執行實際的移動邏輯 (包含升變、入堡、吃過路兵) ---
-        # 讓你的 move 去改變陣列和 flag
+        #讓move改變陣列和flag
         self.move(begin, end, promote) 
         
-        # --- [C] 根據新的棋盤狀態進行 XOR ---
         
-        # 1. 把起點的棋子「拿走」
         self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(moving_piece)][r1 * 8 + c1]
         
-        # 2. 如果原本終點有棋子，把它「拿走」(一般吃子)
         if target_piece != 0:
             self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(target_piece)][r2 * 8 + c2]
-            
-        # 3. 處理特殊的「吃過路兵」 (棋子不在終點格子上)
+
         if abs(moving_piece) == config.PAWN and target_piece == 0 and c1 != c2:
-            # 這是吃過路兵，被吃的兵在終點的上一列或下一列
+
             ep_r = r1 
             ep_pawn = config.PAWN * (-1 if moving_piece > 0 else 1)
             self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(ep_pawn)][ep_r * 8 + c2]
 
-        # 4. 把棋子「放下去」(如果有升變，就放升變後的棋子)
-        placed_piece = self.board[r2][c2] # 直接去盤面上拿最新的棋子
+
+        placed_piece = self.board[r2][c2]
         self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(placed_piece)][r2 * 8 + c2]
 
-        # 5. 處理入堡時「車」的移動
         if abs(moving_piece) == config.KING and abs(c2 - c1) == 2:
-            if c2 == 6: # 短堡
+            if c2 == 6: 
                 rook = self.board[r2][5]
-                # 拿走角落的車，放在 f 欄
                 self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(rook)][r2 * 8 + 7]
                 self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(rook)][r2 * 8 + 5]
-            elif c2 == 2: # 長堡
+            elif c2 == 2:
                 rook = self.board[r2][3]
                 self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(rook)][r2 * 8 + 0]
                 self.zobrist_key ^= zobrist.PIECES[zobrist.piece_to_index(rook)][r2 * 8 + 3]
@@ -560,7 +593,6 @@ class Board():
         if not self.black_king_moved and not self.black_Arook_moved: self.zobrist_key ^= zobrist.CASTLING[3]
         if self.en_passant: self.zobrist_key ^= zobrist.EN_PASSANT[self.en_passant[1]]
         
-        # 換人走
         self.zobrist_key ^= zobrist.BLACK_TO_MOVE
 
     def undo_move(self):
@@ -569,6 +601,7 @@ class Board():
             
         state = self.history.pop()
         
+        # 1. 還原各種標記與 Zobrist Hash
         self.turn = state['turn']
         self.white_king_moved = state['wkm']
         self.black_king_moved = state['bkm']
@@ -578,7 +611,32 @@ class Board():
         self.black_Arook_moved = state['bar']
         self.en_passant = state['ep']
         self.zobrist_key = state['zobrist_key'] 
-        self.board = state['board']
+        
+        begin_r, begin_c = state['begin']
+        end_r, end_c = state['end']
+        
+        self.board[begin_r][begin_c] = state['moving_piece']
+        self.board[end_r][end_c] = state['target_piece']
+        
+
+        if abs(state['moving_piece']) == config.KING and abs(end_c - begin_c) == 2:
+            if end_c == 6:
+                self.board[begin_r][7] = self.board[begin_r][5]
+                self.board[begin_r][5] = 0
+            elif end_c == 2:
+                self.board[begin_r][0] = self.board[begin_r][3]
+                self.board[begin_r][3] = 0
+                
+        if abs(state['moving_piece']) == config.PAWN and state['target_piece'] == 0 and begin_c != end_c:
+        
+            ep_color = -1 if state['moving_piece'] > 0 else 1
+            self.board[begin_r][end_c] = config.PAWN * ep_color
+        
+        if abs(state['moving_piece']) == config.KING:
+            if state['moving_piece'] > 0:
+                self.white_king_pos = state['begin']
+            else:
+                self.black_king_pos = state['begin']
 
 
     def get_fen(self):

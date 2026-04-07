@@ -1,6 +1,9 @@
 from core.board import Board
 import config
 import PST
+from pawns_eval import PawnEvaluator
+
+pawn_tt = PawnEvaluator()
 
 def evaluate(game):
 
@@ -61,6 +64,9 @@ def evaluate(game):
 
     phase = min(phase, 24) # 確保 phase 絕對不會超過 24 (by gemini)
     score = (mg_score * phase + eg_score * (24 - phase)) // 24 #公式
+
+    pawn_score = pawn_tt.probe(game.board)
+    score += pawn_score
 
     return score * game.turn
 
