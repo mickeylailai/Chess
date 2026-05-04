@@ -187,7 +187,7 @@ class Board():
 
     #確定行動合法
     def is_in_check(self, color):
-        
+
         kr, kc = self.white_king_pos if color == 1 else self.black_king_pos
         opp = -color#對方顏色
 
@@ -387,24 +387,17 @@ class Board():
 
         sr, sc = square
         king_val = config.KING * color
-        opp = -color
+        
+        king_r, king_c = self.white_king_pos if color == 1 else self.black_king_pos
 
         old_val = self.board[sr][sc]
-        king_r, king_c = None, None
-        for r in range(8):
-            for c in range(8):
-                if self.board[r][c] == king_val:
-                    king_r, king_c = r, c
-                    break
-            if king_r is not None:
-                break
 
         self.board[king_r][king_c] = 0
         self.board[sr][sc] = king_val
 
         attacked = self.is_in_check(color)
 
-        # 還原
+        #還原
         self.board[sr][sc] = old_val
         self.board[king_r][king_c] = king_val
 
@@ -448,10 +441,9 @@ class Board():
         
         return(pawn_moves)
     
-    def get_all_legal_moves(self, color):
-
+    def get_pseudo_legal_moves(self, color):
+        """產生所有可能的走法 (不管有沒有被將軍)"""
         all_moves = []
-
         for r in range(8):
             for c in range(8):
                 piece = self.board[r][c]
@@ -476,44 +468,30 @@ class Board():
                 else:
                     candidates = []
 
+                # 不呼叫 is_legal_move
                 for end_pos in candidates:
-                    if self.is_legal_move(start_pos, end_pos):
-                        all_moves.append((start_pos, end_pos))
+                    all_moves.append((start_pos, end_pos))
 
         return all_moves
+
     def get_capture_moves(self, color):
-        
-        legal_moves = self.get_all_legal_moves(color)
+        # 改呼叫偽合法步
+        pseudo_moves = self.get_pseudo_legal_moves(color)
         capture_moves = []
 
-        for move in legal_moves:
+        for move in pseudo_moves:
             begin, end = move
-            r1, c1 = begin
-            r2, c2 = end
-
-            attacker_piece = self.board[r1][c1]
-            target_piece = self.board[r2][c2]
-
-            # 判斷是否為過路兵吃子
-            is_en_passant = (abs(attacker_piece) == config.PAWN and (r2, c2) == self.en_passant)
+            attacker_piece = self.board[begin[0]][begin[1]]
+            target_piece = self.board[end[0]][end[1]]
+            is_en_passant = (abs(attacker_piece) == config.PAWN and end == self.en_passant)
 
             if target_piece != 0 or is_en_passant:
-                if is_en_passant:
-                    victim_val = config.MG_value.get(config.PAWN, 0)
-                else:
-                    victim_val = config.MG_value.get(abs(target_piece), 0)
-                
+                victim_val = config.MG_value.get(config.PAWN, 0) if is_en_passant else config.MG_value.get(abs(target_piece), 0)
                 attacker_val = config.MG_value.get(abs(attacker_piece), 0)
-
-                #MVV-LVA評分：越有價值的要被吃掉
-                #乘上10放大受害者的重要性
                 score = (victim_val * 10) - attacker_val
-                
                 capture_moves.append((score, move))
 
-        # 依照分數由大到小排序
         capture_moves.sort(key=lambda x: x[0], reverse=True)
-
         return [move for score, move in capture_moves]
     
     def is_checkmate(self, color):
@@ -700,34 +678,26 @@ class Board():
         return(Fen)
 
     def load_fen(self, fen_str):
-        # 將 FEN 字串用「空格」切成不同區塊
         parts = fen_str.split()
         
-        # --- 1. 還原棋盤陣列 ---
         self.board = np.zeros((8, 8), dtype=int)
         piece_map = {
             'P': 1, 'N': 2, 'B': 3, 'R': 4, 'Q': 5, 'K': 6,
             'p': -1, 'n': -2, 'b': -3, 'r': -4, 'q': -5, 'k': -6
         }
         
-        # 依照 '/' 切割出 8 個橫列
         rows = parts[0].split('/')
         for r in range(8):
             c = 0
             for char in rows[r]:
                 if char.isdigit():
-                    # 如果是數字，代表連續的空格，Column 索引要往後推
                     c += int(char)
                 else:
-                    # 如果是字母，就把對應的數字放進棋盤
                     self.board[r][c] = piece_map[char]
                     c += 1
-                    
-        # --- 2. 還原輪次 ---
+
         self.turn = 1 if parts[1] == 'w' else -1
         
-        # --- 3. 還原入堡權限 ---
-        # 簡單暴力法：如果沒看到大寫 K，就當作白方國王或短車已經動過了，失去權利
         castling = parts[2]
         self.white_king_moved  = 'K' not in castling and 'Q' not in castling
         self.white_Hrook_moved = 'K' not in castling
@@ -736,7 +706,6 @@ class Board():
         self.black_Hrook_moved = 'k' not in castling
         self.black_Arook_moved = 'q' not in castling
         
-        # --- 4. 還原過路兵 ---
         if parts[3] != '-':
             files = "abcdefgh"
             ep_c = files.index(parts[3][0])

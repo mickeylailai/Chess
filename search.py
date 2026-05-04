@@ -36,73 +36,53 @@ def quiescence_search(game, alpha, beta): #避免深度到0的時候接續被吃
     return alpha
 
 def negamax(game, depth, alpha, beta):
-
     old_alpha = alpha
     move_tt = None
 
-    #先看有沒有查過了
     entry = tt.lookup(game.zobrist_key)
-
-    #如果有而且深度更深那就取代
     if entry:
         depth_tt, score_tt, flag_tt, move_tt = entry
         if depth_tt >= depth:
-            #去判斷flag, 如果EXACT直接回傳score, 不然就更新beta, alpha
-            if flag_tt == EXACT:
-                return(score_tt)
-            elif flag_tt == LOWERBOUND:
-                alpha = max(alpha, score_tt)
-            elif flag_tt == UPPERBOUND:
-                beta = min(beta, score_tt)
-            
-            if alpha >= beta: return(score_tt)
+            if flag_tt == EXACT: return score_tt
+            elif flag_tt == LOWERBOUND: alpha = max(alpha, score_tt)
+            elif flag_tt == UPPERBOUND: beta = min(beta, score_tt)
+            if alpha >= beta: return score_tt
 
-    #遞迴終止 
-    #到指定深度
     if depth == 0:
         return quiescence_search(game, alpha, beta)
     
-    #檢查合法步數
-    legal_moves = game.get_all_legal_moves(game.turn)
-
-    #Checkmate or Stalemate
-    if not legal_moves:
-        if game.is_checkmate(game.turn):
-            return -99999 - depth 
-        else:
-            return 0 
+    pseudo_moves = game.get_pseudo_legal_moves(game.turn)
     
     def get_move_score(move):
-        if move == move_tt:
-            return 9999999  
-            
+        if move == move_tt: return 9999999  
         begin, end = move
         target_piece = game.board[end[0]][end[1]]
-
         if target_piece != 0:
             attacker_piece = game.board[begin[0]][begin[1]]
             v_val = config.MG_value.get(abs(target_piece), 0)
             a_val = config.MG_value.get(abs(attacker_piece), 0)
             return (v_val * 10) - a_val + 1000000 
-            
         return 0 
 
-
-    legal_moves.sort(key=get_move_score, reverse=True)
-
+    pseudo_moves.sort(key=get_move_score, reverse=True)
     
     best_score = -math.inf
     best_move = None
+    legal_moves_played = 0 # 紀錄這回合到底有幾步是合法的
 
-    #遍歷走法
-    for move in legal_moves:
+    for move in pseudo_moves:
         begin, end = move 
-
         game.make_move(begin, end)
-        score = -negamax(game, depth - 1, -beta, -alpha)
-        game.undo_move() #復原
+        
+        if game.is_in_check(game.turn * -1):
+            game.undo_move()
+            continue
+            
+        legal_moves_played += 1 # 成功走了一步合法步
 
-        #Alpha-Beta剪枝
+        score = -negamax(game, depth - 1, -beta, -alpha)
+        game.undo_move() 
+
         if score > best_score:
             best_score = score
             best_move = move
@@ -110,19 +90,23 @@ def negamax(game, depth, alpha, beta):
             alpha = score
         if alpha >= beta:
             break 
+            
+    # 如果把所有走法都試過了，卻連一步合法步都走不出來
+    if legal_moves_played == 0:
+        if game.is_in_check(game.turn): # 被將軍且沒步走 = 被將死
+            return -99999 - depth 
+        else:                           # 沒被將軍且沒步走 = 逼和
+            return 0
     
-    if best_score <= old_alpha:
-        flag = UPPERBOUND
-    elif best_score >= beta:
-        flag = LOWERBOUND
-    else:
-        flag = EXACT
+    if best_score <= old_alpha: flag = UPPERBOUND
+    elif best_score >= beta: flag = LOWERBOUND
+    else: flag = EXACT
         
     tt.store(game.zobrist_key, depth, best_score, flag, best_move)
     return best_score
 
 def get_best_move(game, depth):
-    legal_moves = game.get_all_legal_moves(game.turn)
+    legal_moves = game.get_pseudo_legal_moves(game.turn)
 
     if not legal_moves:
         return None
@@ -145,6 +129,7 @@ def get_best_move(game, depth):
         begin, end = move
         
         game.make_move(begin, end)
+        if game.is_in_check(game.turn * -1): continue
         score = -negamax(game, depth - 1, -beta, -alpha) 
         game.undo_move()
 
