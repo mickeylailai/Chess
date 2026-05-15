@@ -1,15 +1,15 @@
 import random
 
-#12 種棋子 * 64 格
+# 12 種棋子 * 64 格
 PIECES = [[random.getrandbits(64) for _ in range(64)] for _ in range(12)]
 
-#黑方
+# 黑方回合
 BLACK_TO_MOVE = random.getrandbits(64)
 
-#入堡
+# 入堡權
 CASTLING = [random.getrandbits(64) for _ in range(4)]
 
-#過路兵
+# 過路兵欄位
 EN_PASSANT = [random.getrandbits(64) for _ in range(8)]
 
 def piece_to_index(piece):
