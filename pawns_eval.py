@@ -10,16 +10,16 @@ SCORE_ISOLATED = -15
 SCORE_CONNECTED = +10
 SCORE_PASSED = +30
 
-#通路兵獎勵(越靠近敵方底線越高)
+# 通路兵獎勵
 PASSED_BONUS = [0, 0, 10, 20, 35, 55, 80, 0] 
 
 def find_doubled(pawns):
-    #疊兵要看同條file
+    # 疊兵看同 file
     file_counts = {}
     for sq in pawns:
         f = get_file(sq)
         file_counts[f] = file_counts.get(f, 0) + 1
-    return {sq for sq in pawns if file_counts[get_file(sq)] > 1} #掃過所有的兵，只要發現這顆兵所在的file上，總兵數超過1個，就把這顆兵的位置(sq)回傳
+    return {sq for sq in pawns if file_counts[get_file(sq)] > 1}
 
 def find_isolated(pawns):
     my_files = {get_file(sq) for sq in pawns}
@@ -79,14 +79,14 @@ class PawnEvaluator:
         self.table = {}
 
     def extract_pawns(self, board_array):
-        #壓成1D
+        # 壓成 1D
         white_pawns = set()
         black_pawns = set()
         for r in range(8):
             for c in range(8):
-                if board_array[r][c] == 1:   #白兵
+                if board_array[r][c] == 1:   # 白兵
                     white_pawns.add(r * 8 + c)
-                elif board_array[r][c] == -1: #黑兵
+                elif board_array[r][c] == -1: # 黑兵
                     black_pawns.add(r * 8 + c)
         return white_pawns, black_pawns
 

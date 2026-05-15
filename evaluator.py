@@ -37,7 +37,7 @@ def evaluate(game):
         config.KING: PST.K_EGPST
     }
 
-    #計算子力(PST + Material)
+    # 算子力 (PST + 子值)
     for r in range(8):
         for c in range(8):
             piece = game.board[r][c]
@@ -47,23 +47,23 @@ def evaluate(game):
             
             color = 1 if piece > 0 else -1
             
-            #Phase值
+            # 局面 phase
             phase += phase_weight[abs(piece)]
 
-            #因為pst沒分黑白寫所以要換行
+            # 黑子要翻行
             pst_r = r if color == 1 else 7 - r
 
-            mg_mat = config.MG_value.get(abs(piece), 0) #基本分
+            mg_mat = config.MG_value.get(abs(piece), 0) # 子值
             eg_mat = config.EG_value.get(abs(piece), 0)
 
-            mg_pst_val = mg_pst_map[abs(piece)][pst_r][c]#PST分
+            mg_pst_val = mg_pst_map[abs(piece)][pst_r][c] # PST分
             eg_pst_val = eg_pst_map[abs(piece)][pst_r][c]
 
             mg_score += (mg_mat + mg_pst_val) * color
             eg_score += (eg_mat + eg_pst_val) * color
 
-    phase = min(phase, 24) # 確保 phase 絕對不會超過 24 (by gemini)
-    score = (mg_score * phase + eg_score * (24 - phase)) // 24 #公式
+    phase = min(phase, 24) # phase 上限
+    score = (mg_score * phase + eg_score * (24 - phase)) // 24 # 插值
 
     pawn_score = pawn_tt.probe(game.board)
     score += pawn_score
