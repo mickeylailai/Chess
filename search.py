@@ -7,11 +7,11 @@ from core.board import zobrist
 
 tt = SimpleTT()
 
-EXACT = 0 # 無剪枝
-LOWERBOUND = 1 # beta剪枝，下界
-UPPERBOUND = 2 # alpha失敗，上界
+EXACT = 0 #沒有剪枝
+LOWERBOUND = 1 #發生beta剪枝 score可能更高
+UPPERBOUND = 2 #走法都>alpha score可能更低
 
-def quiescence_search(game, alpha, beta): # 靜態搜尋，處理吃子延伸
+def quiescence_search(game, alpha, beta): #避免深度到0的時候接續被吃子等等
 
     stand_pat = evaluate(game)
     
@@ -68,7 +68,7 @@ def negamax(game, depth, alpha, beta):
     
     best_score = -math.inf
     best_move = None
-    legal_moves_played = 0 # 這輪合法步數
+    legal_moves_played = 0 # 紀錄這回合到底有幾步是合法的
 
     for move in pseudo_moves:
         begin, end = move 
@@ -78,7 +78,7 @@ def negamax(game, depth, alpha, beta):
             game.undo_move()
             continue
             
-        legal_moves_played += 1 # 有走出合法步
+        legal_moves_played += 1 # 成功走了一步合法步
 
         score = -negamax(game, depth - 1, -beta, -alpha)
         game.undo_move() 
@@ -91,11 +91,11 @@ def negamax(game, depth, alpha, beta):
         if alpha >= beta:
             break 
             
-    # 沒有合法步
+    # 如果把所有走法都試過了，卻連一步合法步都走不出來
     if legal_moves_played == 0:
-        if game.is_in_check(game.turn): # 被將死
+        if game.is_in_check(game.turn): # 被將軍且沒步走 = 被將死
             return -99999 - depth 
-        else:                           # 逼和
+        else:                           # 沒被將軍且沒步走 = 逼和
             return 0
     
     if best_score <= old_alpha: flag = UPPERBOUND

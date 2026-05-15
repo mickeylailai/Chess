@@ -29,7 +29,7 @@ if __name__ == "__main__":
             score_adv = evaluate(game)
             print(f"評估分數: {score_adv}\n")
 
-            # 查開局庫
+            # 開局庫
             result = game.get_book_move(r"C:\Users\micke\OneDrive\桌面\Chess\Titans.bin")
 
             if result:
